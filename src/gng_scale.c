@@ -95,9 +95,32 @@ void _gng_scale_listener_task(void *p) {
 
                 // If we have received 14 bytes then we can decode the message
                 if (string_buf_idx == sizeof(gngscale_standard_data_format_t)) {
-                    // Data is ready, send to decode
-                    scale_config.current_scale_measurement = _decode_measurement_msg(&frame);
-                    // Signal the data is ready
+                    // *** VALIDERING: Kontrollera att data-fältet börjar med giltigt tecken ***
+                    char first_char = frame.data[0];
+                    if (first_char != '+' && first_char != '-' && first_char != ' ' && 
+                        !((first_char >= '0' && first_char <= '9'))) {
+                        string_buf_idx = 0;
+                        got_response = true;
+                        continue; // Ogiltig frame — börja om
+                    }
+
+                    float weight_raw = _decode_measurement_msg(&frame);
+                    
+                    // *** VALIDERING: Kontrollera att vikten inte är garbage/NaN ***
+                    if (isnan(weight_raw)) {
+                        scale_config.current_scale_measurement = 0.0f;
+                        string_buf_idx = 0;
+                        got_response = true;
+                        continue;
+                    }
+
+                    // *** ENHET-KONVERTERING: Om vågen skickar 'g' (gram) → konvertera till grains (gr) ***
+                    char unit_char = frame.unit[0];
+                    if (unit_char == 'g') {
+                        weight_raw *= 15.432358;  // grams * 15.43 = grains
+                    }
+
+                    scale_config.current_scale_measurement = weight_raw;
                     if (scale_config.scale_measurement_ready) {
                         xSemaphoreGive(scale_config.scale_measurement_ready);
                     }
